@@ -53,6 +53,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
+
 import javax.annotation.Nullable;
 
 /**
@@ -167,16 +169,20 @@ public class DnsNameResolver extends NameResolver {
     this.executorResource = executorResource;
     // Must prepend a "//" to the name when constructing a URI, otherwise it will be treated as an
     // opaque URI, thus the authority and host of the resulted URI would be null.
+    logger.info("Creating DnsNameResolver for name " + name);
     URI nameUri = URI.create("//" + checkNotNull(name, "name"));
     Preconditions.checkArgument(nameUri.getHost() != null, "Invalid DNS name: %s", name);
     authority = Preconditions.checkNotNull(nameUri.getAuthority(),
         "nameUri (%s) doesn't have an authority", nameUri);
+    logger.info("with authority " + authority);
     host = nameUri.getHost();
+    logger.info("with host " + host);
     if (nameUri.getPort() == -1) {
       port = args.getDefaultPort();
     } else {
       port = nameUri.getPort();
     }
+    logger.info("with port " + port);
     this.proxyDetector = checkNotNull(args.getProxyDetector(), "proxyDetector");
     this.cacheTtlNanos = getNetworkAddressCacheTtlNanos(isAndroid);
     this.stopwatch = checkNotNull(stopwatch, "stopwatch");
@@ -223,7 +229,7 @@ public class DnsNameResolver extends NameResolver {
       throw new RuntimeException(e);
     } finally {
       if (addressesException != null) {
-        logger.log(Level.FINE, "Address resolution failure", addressesException);
+        logger.log(Level.SEVERE, "Address resolution failure", addressesException);
       }
     }
     // Each address forms an EAG
@@ -300,33 +306,34 @@ public class DnsNameResolver extends NameResolver {
       this.savedListener = checkNotNull(savedListener, "savedListener");
     }
 
+    @android.support.annotation.RequiresApi(api = android.os.Build.VERSION_CODES.N)
     @Override
     public void run() {
-      if (logger.isLoggable(Level.FINER)) {
-        logger.finer("Attempting DNS resolution of " + host);
-      }
+      logger.info("Attempting DNS resolution of " + host);
       InternalResolutionResult result = null;
       try {
         EquivalentAddressGroup proxiedAddr = detectProxy();
         ResolutionResult.Builder resolutionResultBuilder = ResolutionResult.newBuilder();
         if (proxiedAddr != null) {
-          if (logger.isLoggable(Level.FINER)) {
-            logger.finer("Using proxy address " + proxiedAddr);
-          }
+          logger.info("Using proxy address " + proxiedAddr);
           resolutionResultBuilder.setAddresses(Collections.singletonList(proxiedAddr));
         } else {
           result = doResolve(false);
           if (result.error != null) {
+            logger.severe(result.error.toString());
             savedListener.onError(result.error);
             return;
           }
           if (result.addresses != null) {
+            logger.info("addresses: " + String.join(", ", result.addresses));
             resolutionResultBuilder.setAddresses(result.addresses);
           }
           if (result.config != null) {
+            logger.info("config: " + result.config);
             resolutionResultBuilder.setServiceConfig(result.config);
           }
           if (result.attributes != null) {
+            logger.info("attributes: " + result.attributes);
             resolutionResultBuilder.setAttributes(result.attributes);
           }
         }
